@@ -1,9 +1,8 @@
 version: '3.8'
 services:
   kafka:
-    image: apache/kafka:4.1.0
+    image: apache/kafka:latest
     container_name: kafka
-    hostname: kafka
     ports:
       - "9092:9092"
       - "9093:9093"
@@ -11,24 +10,19 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093
-
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_BROKER_HEARTBEAT_INTERVAL_MS: 5000
-      KAFKA_BROKER_SESSION_TIMEOUT_MS: 10000
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       CLUSTER_ID: ""
     volumes:
       - kafka_data:/var/lib/kafka/data
-    networks:
-      - mongo-chroma
 
     healthcheck:
       test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/9092"]
@@ -37,70 +31,5 @@ services:
       retries: 10
       start_period: 20s
 
-  initializer:
-    build: . 
-    container_name: initializer
-    command: python initializer.py
-    volumes:
-      - .:/app
-    environment:
-      - MONGO_URI=
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - CHROMADB_PATH=/app/chroma_data
-    depends_on:
-      kafka:
-        condition: service_healthy
-    networks:
-      - mongo-chroma
-      
-  producer:
-    build: .
-    container_name: producer
-    command: python producer/produce.py
-    volumes:
-      - .:/app
-    environment:
-      - MONGO_URI=
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-    depends_on:
-      kafka:
-        condition: service_healthy
-      initializer:
-        condition: service_completed_successfully
-    restart: on-failure
-    networks:
-      - mongo-chroma
-
-  consumer:
-    build: .
-    container_name: consumer
-    command: python consumer/consume.py
-    volumes:
-      - .:/app
-      - chroma_data:/app/chroma_data 
-    environment:
-      - MONGO_URI=
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - CHROMADB_PATH=/app/chroma_data
-      - HUGGINGFACE_API_TOKEN=
-    depends_on:
-      kafka:
-        condition: service_healthy
-      initializer:
-        condition: service_completed_successfully
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 1024M
-    restart: on-failure
-    networks:
-      - mongo-chroma
-
 volumes:
   kafka_data:
-  chroma_data: 
-
-networks:
-  mongo-chroma:
-    driver: bridge
